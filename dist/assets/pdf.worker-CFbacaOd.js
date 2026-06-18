@@ -1,1 +1,0 @@
-var e=`/sketchy/assets/pdf.worker-iVMkNdeB.mjs`;export{e as default};
