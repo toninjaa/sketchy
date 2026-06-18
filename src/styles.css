@@ -1,6 +1,6 @@
 :root {
-  color: #221f1c;
-  background: #d8d2c5;
+  color: #231f20;
+  background: #ffe8ef;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 16px;
 }
@@ -24,7 +24,7 @@ textarea {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 292px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -33,9 +33,13 @@ textarea {
   flex-direction: column;
   gap: 14px;
   padding: 22px;
-  color: #f6f0e6;
-  background: #24312f;
-  border-right: 1px solid rgba(0, 0, 0, 0.18);
+  color: #251d2b;
+  background:
+    radial-gradient(circle at 22px 24px, rgba(255, 255, 255, 0.65) 0 4px, transparent 5px),
+    linear-gradient(145deg, #ffb7d1 0%, #f8df62 48%, #76d7cf 100%);
+  background-size: 42px 42px, auto;
+  border-right: 3px solid #251d2b;
+  box-shadow: inset -7px 0 0 rgba(255, 255, 255, 0.35);
 }
 
 .brand {
@@ -45,23 +49,39 @@ textarea {
   margin-bottom: 14px;
 }
 
+.brand-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: #251d2b;
+  background: #fff9f1;
+  border: 3px solid #251d2b;
+  border-radius: 8px;
+  box-shadow: 4px 4px 0 #251d2b;
+  transform: rotate(-5deg);
+}
+
 .brand strong,
 .brand span {
   display: block;
 }
 
 .brand strong {
-  font-size: 1rem;
+  font-size: 1.38rem;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .brand span {
-  color: #c8d2cb;
+  color: #47394f;
   font-size: 0.82rem;
+  font-weight: 750;
 }
 
 .field-label {
   margin-top: 8px;
-  color: #dbe4dc;
+  color: #3e3145;
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0;
@@ -69,14 +89,27 @@ textarea {
 }
 
 .title-input,
-.type-select {
+.type-select,
+.paste-box {
   width: 100%;
-  min-height: 42px;
   padding: 0 11px;
-  color: #1e2927;
-  background: #f7f1e8;
-  border: 1px solid #aebbad;
+  color: #251d2b;
+  background: #fff9f1;
+  border: 2px solid #251d2b;
   border-radius: 6px;
+  box-shadow: 3px 3px 0 rgba(37, 29, 43, 0.24);
+}
+
+.title-input,
+.type-select {
+  min-height: 42px;
+}
+
+.paste-box {
+  min-height: 118px;
+  padding-block: 10px;
+  resize: vertical;
+  line-height: 1.35;
 }
 
 .primary-button {
@@ -86,23 +119,121 @@ textarea {
   gap: 9px;
   min-height: 44px;
   margin-top: 8px;
-  color: #12211d;
-  background: #e3b448;
-  border: 0;
+  color: #251d2b;
+  background: #ff7aaa;
+  border: 3px solid #251d2b;
   border-radius: 6px;
   font-weight: 800;
   cursor: pointer;
+  box-shadow: 5px 5px 0 #251d2b;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
 }
 
 .primary-button:hover {
-  background: #f0c85e;
+  background: #ff95bb;
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 #251d2b;
+}
+
+.primary-button:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 #251d2b;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 11px;
+  color: #251d2b;
+  background: #fff9f1;
+  border: 2px solid #251d2b;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 rgba(37, 29, 43, 0.28);
+}
+
+.secondary-button:hover {
+  background: #dff7f2;
+}
+
+.secondary-button:disabled,
+.secondary-button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.import-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 2px dashed rgba(37, 29, 43, 0.38);
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #251d2b;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.import-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.import-options label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  color: #251d2b;
+  background: rgba(255, 249, 241, 0.72);
+  border: 2px solid rgba(37, 29, 43, 0.78);
+  border-radius: 6px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.import-options input {
+  accent-color: #ff4f93;
+}
+
+.file-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.import-status {
+  color: #45394d;
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .note {
   margin-top: auto;
   padding-top: 18px;
-  color: #ccd8d0;
-  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  color: #44364c;
+  border-top: 2px dashed rgba(37, 29, 43, 0.38);
   font-size: 0.86rem;
   line-height: 1.45;
 }
@@ -111,18 +242,39 @@ textarea {
   overflow: auto;
   padding: 42px min(5vw, 72px);
   background:
-    linear-gradient(90deg, rgba(36, 49, 47, 0.08) 1px, transparent 1px),
-    #c9c2b5;
-  background-size: 32px 32px;
+    linear-gradient(90deg, rgba(37, 29, 43, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(37, 29, 43, 0.08) 1px, transparent 1px),
+    #bfece7;
+  background-size: 30px 30px;
+}
+
+.page-stack {
+  display: grid;
+  gap: 44px;
 }
 
 .page {
+  position: relative;
   width: min(100%, 8.5in);
-  min-height: 11in;
+  height: 11in;
   margin: 0 auto;
   padding: 0.95in 1in 1in 1.5in;
   background: #fffdf7;
-  box-shadow: 0 22px 60px rgba(23, 24, 21, 0.26);
+  border: 1px solid rgba(37, 29, 43, 0.12);
+  box-shadow:
+    10px 10px 0 #ff7aaa,
+    18px 18px 0 #251d2b,
+    0 22px 60px rgba(37, 29, 43, 0.2);
+}
+
+.page-number {
+  position: absolute;
+  top: 0.45in;
+  right: 0.6in;
+  color: #111;
+  font-family: "Courier Prime", "Courier New", Courier, monospace;
+  font-size: 12pt;
+  line-height: 1;
 }
 
 .screenplay-title {
@@ -200,7 +352,7 @@ textarea {
 }
 
 .script-line.is-active {
-  outline: 1px solid rgba(210, 155, 44, 0.5);
+  outline: 2px dashed rgba(255, 79, 147, 0.58);
   outline-offset: 5px;
 }
 
@@ -211,11 +363,12 @@ textarea {
   width: 24px;
   height: 24px;
   place-items: center;
-  color: #24312f;
-  background: #ede6da;
-  border: 1px solid #cfc4b4;
+  color: #251d2b;
+  background: #fff0a7;
+  border: 2px solid #251d2b;
   border-radius: 5px;
   cursor: pointer;
+  box-shadow: 2px 2px 0 #251d2b;
 }
 
 .script-line:hover .line-action,
@@ -246,6 +399,7 @@ textarea {
   }
 
   .brand,
+  .import-panel,
   .note {
     grid-column: 1 / -1;
   }
@@ -255,6 +409,8 @@ textarea {
   }
 
   .page {
+    height: auto;
+    min-height: 11in;
     padding: 0.65in 0.45in 0.75in 0.6in;
   }
 
@@ -270,7 +426,18 @@ textarea {
 @media print {
   @page {
     size: letter;
-    margin: 0;
+    margin: 0.45in 0.6in;
+    @top-right {
+      content: counter(page) ".";
+      font-family: "Courier Prime", "Courier New", Courier, monospace;
+      font-size: 12pt;
+    }
+  }
+
+  @page:first {
+    @top-right {
+      content: "";
+    }
   }
 
   :root,
@@ -283,7 +450,8 @@ textarea {
   }
 
   .app-shell,
-  .desk {
+  .desk,
+  .page-stack {
     display: block;
     min-height: auto;
     padding: 0;
@@ -292,11 +460,24 @@ textarea {
   }
 
   .page {
-    width: 8.5in;
-    min-height: 11in;
+    width: auto;
+    height: auto;
+    min-height: auto;
     margin: 0;
-    padding: 0.95in 1in 1in 1.5in;
+    padding: 0.5in 0.4in 0.55in 0.9in;
+    border: 0;
     box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .page-number {
+    display: none;
   }
 
   .line-action,
