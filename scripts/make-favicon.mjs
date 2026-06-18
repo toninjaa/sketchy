@@ -1,4 +1,5 @@
 import { writeFileSync } from "node:fs";
+import { deflateSync } from "node:zlib";
 
 const size = 32;
 const pixels = Buffer.alloc(size * size * 4);
@@ -177,3 +178,58 @@ for (let y = size - 1; y >= 0; y -= 1) {
 }
 
 writeFileSync("public/favicon.ico", buffer);
+
+function crc32(source) {
+  let crc = 0xffffffff;
+  for (const byte of source) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBuffer = Buffer.from(type);
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  typeBuffer.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 8 + data.length);
+  return chunk;
+}
+
+const pngRows = Buffer.alloc((size * 4 + 1) * size);
+let pngOffset = 0;
+for (let y = 0; y < size; y += 1) {
+  pngRows[pngOffset] = 0;
+  pngOffset += 1;
+  for (let x = 0; x < size; x += 1) {
+    const source = (y * size + x) * 4;
+    pngRows[pngOffset] = pixels[source + 2];
+    pngRows[pngOffset + 1] = pixels[source + 1];
+    pngRows[pngOffset + 2] = pixels[source];
+    pngRows[pngOffset + 3] = pixels[source + 3];
+    pngOffset += 4;
+  }
+}
+
+const ihdr = Buffer.alloc(13);
+ihdr.writeUInt32BE(size, 0);
+ihdr.writeUInt32BE(size, 4);
+ihdr[8] = 8;
+ihdr[9] = 6;
+ihdr[10] = 0;
+ihdr[11] = 0;
+ihdr[12] = 0;
+
+writeFileSync(
+  "public/favicon-32.png",
+  Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(pngRows)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]),
+);

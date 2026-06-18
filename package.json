@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "npm run favicon",
     "build": "vite build",
     "favicon": "node scripts/make-favicon.mjs",
     "preview": "vite preview --host 127.0.0.1",

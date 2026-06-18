@@ -38,6 +38,7 @@ const TYPES = [
 
 const TYPE_BY_ID = Object.fromEntries(TYPES.map((type) => [type.id, type]));
 const STORAGE_KEY = "sketchy-script-editor-v1";
+const FAVICON_VERSION = "5";
 
 const initialLines = [
   { id: crypto.randomUUID(), type: "scene-title", text: "INT. WRITER'S ROOM - NIGHT" },
@@ -199,6 +200,20 @@ function App() {
   const [importStatus, setImportStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const inputRefs = useRef({});
+
+  useEffect(() => {
+    const faviconHref = `${import.meta.env.BASE_URL}favicon-32.png?v=${FAVICON_VERSION}`;
+    document.querySelectorAll("link[rel~='icon'], link[rel='shortcut icon']").forEach((link) => {
+      link.remove();
+    });
+
+    const favicon = document.createElement("link");
+    favicon.rel = "icon";
+    favicon.type = "image/png";
+    favicon.sizes = "32x32";
+    favicon.href = faviconHref;
+    document.head.append(favicon);
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
