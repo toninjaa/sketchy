@@ -1,21 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ClipboardPaste, Download, FileUp, FileText, Plus, Trash2 } from "lucide-react";
+import { ClipboardPaste, Copy, Download, FileUp, FileText, Plus } from "lucide-react";
 import "./styles.css";
 
 const TYPES = [
-  {
-    id: "scene-title",
-    label: "Scene Title",
-    next: "scene-description",
-    placeholder: "INT. COFFEE SHOP - NIGHT",
-  },
-  {
-    id: "scene-description",
-    label: "Scene Description",
-    next: "character",
-    placeholder: "Rain needles against the windows.",
-  },
   {
     id: "character",
     label: "Character",
@@ -25,8 +13,14 @@ const TYPES = [
   {
     id: "dialogue",
     label: "Dialogue",
-    next: "parenthetical",
+    next: "character",
     placeholder: "I thought you were done with impossible things.",
+  },
+  {
+    id: "scene-description",
+    label: "Scene Description",
+    next: "character",
+    placeholder: "Rain needles against the windows.",
   },
   {
     id: "parenthetical",
@@ -34,10 +28,17 @@ const TYPES = [
     next: "dialogue",
     placeholder: "quietly",
   },
+  {
+    id: "scene-title",
+    label: "Scene Title",
+    next: "scene-description",
+    placeholder: "INT. COFFEE SHOP - NIGHT",
+  },
 ];
 
 const TYPE_BY_ID = Object.fromEntries(TYPES.map((type) => [type.id, type]));
 const STORAGE_KEY = "sketchy-script-editor-v1";
+const STORAGE_BACKUP_KEY = "sketchy-script-editor-v1-backup";
 const FAVICON_VERSION = "5";
 
 const initialLines = [
@@ -54,12 +55,33 @@ const initialLines = [
 const sceneHeadingPattern =
   /^(INT|EXT|INT\.\/EXT|EXT\.\/INT|I\/E|EST|INT-EXT|EXT-INT)\.?\s+/i;
 const transitionPattern = /^(CUT TO|FADE OUT|FADE IN|DISSOLVE TO|SMASH CUT TO|MATCH CUT TO):?$/i;
-const FIRST_PAGE_CAPACITY = 41;
-const PAGE_CAPACITY = 49;
+const FIRST_PAGE_CAPACITY = 44;
+const PAGE_CAPACITY = 52;
 
 function cleanStoredText(type, text) {
-  if (type === "parenthetical") return text.replace(/^\(+|\)+$/g, "");
+  if (type === "parenthetical") return text.replace(/[()]/g, "");
   return text;
+}
+
+function editableText(line) {
+  const cleaned = cleanStoredText(line.type, line.text);
+  if (line.type === "scene-title" || line.type === "character") return cleaned.toUpperCase();
+  return cleaned;
+}
+
+function parentheticalEditableText(line) {
+  return `(${editableText(line)})`;
+}
+
+function parseParentheticalInput(rawValue) {
+  let inner = rawValue;
+  if (inner.startsWith("(")) inner = inner.slice(1);
+  if (inner.endsWith(")")) inner = inner.slice(0, -1);
+  return inner.replace(/[()]/g, "");
+}
+
+function createBlankLines() {
+  return [{ id: crypto.randomUUID(), type: "scene-title", text: "" }];
 }
 
 function displayText(line) {
@@ -69,11 +91,17 @@ function displayText(line) {
   return cleaned;
 }
 
+function serializeScript(scriptTitle, scriptLines) {
+  const body = scriptLines.map((line) => displayText(line)).join("\n");
+  if (!scriptTitle.trim()) return body;
+  return `${scriptTitle.trim()}\n\n${body}`;
+}
+
 function estimateLineUnits(line) {
   const textLength = Math.max(displayText(line).length, 1);
   const width = line.type === "dialogue" ? 42 : line.type === "parenthetical" ? 34 : 60;
   const wrappedRows = Math.max(1, Math.ceil(textLength / width));
-  const spacing = line.type === "dialogue" ? 1.65 : 1;
+  const spacing = line.type === "dialogue" ? 1.45 : 1;
   return wrappedRows + spacing;
 }
 
@@ -83,13 +111,36 @@ function paginateLines(linesToPaginate) {
   let usedUnits = 0;
   let capacity = FIRST_PAGE_CAPACITY;
 
+  function startNewPage() {
+    pages.push(currentPage);
+    currentPage = [];
+    usedUnits = 0;
+    capacity = PAGE_CAPACITY;
+  }
+
   for (const line of linesToPaginate) {
     const lineUnits = estimateLineUnits(line);
+
+    if (
+      line.type === "dialogue" &&
+      currentPage.length > 0 &&
+      currentPage.at(-1).type === "character" &&
+      usedUnits + lineUnits > capacity
+    ) {
+      const characterLine = currentPage.pop();
+      const characterUnits = estimateLineUnits(characterLine);
+      usedUnits -= characterUnits;
+
+      if (currentPage.length > 0 && usedUnits + characterUnits + lineUnits > capacity) {
+        startNewPage();
+      }
+
+      currentPage.push(characterLine);
+      usedUnits += characterUnits;
+    }
+
     if (currentPage.length > 0 && usedUnits + lineUnits > capacity) {
-      pages.push(currentPage);
-      currentPage = [];
-      usedUnits = 0;
-      capacity = PAGE_CAPACITY;
+      startNewPage();
     }
 
     currentPage.push(line);
@@ -198,8 +249,80 @@ function App() {
   const [importText, setImportText] = useState("");
   const [importMode, setImportMode] = useState("replace");
   const [importStatus, setImportStatus] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
+  const [showNewScriptModal, setShowNewScriptModal] = useState(false);
+  const [isStorageHydrated, setIsStorageHydrated] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState("");
   const inputRefs = useRef({});
+  const editorSelectionRef = useRef(null);
+  const composingLineIdRef = useRef(null);
+
+  function captureEditorSelection(lineId, target) {
+    composingLineIdRef.current = lineId;
+    editorSelectionRef.current = {
+      id: lineId,
+      start: target.selectionStart,
+      end: target.selectionEnd,
+    };
+  }
+
+  function restoreEditorFocus(lineId, element) {
+    if (!element || composingLineIdRef.current !== lineId) return;
+
+    const pending = editorSelectionRef.current;
+    const shouldFocus = document.activeElement !== element;
+
+    if (shouldFocus) {
+      element.focus({ preventScroll: true });
+    }
+
+    if (pending?.id === lineId) {
+      const length = element.value.length;
+      const start = Math.min(pending.start, length);
+      const end = Math.min(pending.end ?? start, length);
+      element.setSelectionRange(start, end);
+      editorSelectionRef.current = null;
+    }
+
+    element.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }
+
+  function assignInputRef(lineId, element, resize = false) {
+    inputRefs.current[lineId] = element;
+    if (!element) return;
+
+    if (resize) {
+      element.style.height = "0px";
+      element.style.height = `${element.scrollHeight}px`;
+    }
+
+    if (composingLineIdRef.current === lineId) {
+      queueMicrotask(() => restoreEditorFocus(lineId, element));
+    }
+  }
+
+  function handleLineFocus(lineId) {
+    if (composingLineIdRef.current !== lineId) {
+      editorSelectionRef.current = null;
+    }
+    setActiveId(lineId);
+    composingLineIdRef.current = lineId;
+  }
+
+  function handleLineBlur(event, lineId) {
+    const nextFocus = event.relatedTarget;
+    if (nextFocus?.closest?.(".script-line")) return;
+    if (composingLineIdRef.current === lineId) {
+      composingLineIdRef.current = null;
+      editorSelectionRef.current = null;
+    }
+  }
+
+  function handleLineChange(event, line) {
+    captureEditorSelection(line.id, event.target);
+    updateLine(line.id, { text: event.target.value });
+  }
 
   useEffect(() => {
     const faviconHref = `${import.meta.env.BASE_URL}favicon-32.png?v=${FAVICON_VERSION}`;
@@ -217,32 +340,84 @@ function App() {
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (parsed.title) setTitle(parsed.title);
-      if (Array.isArray(parsed.lines) && parsed.lines.length) {
-        setLines(parsed.lines);
-        setActiveId(parsed.lines[0].id);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.title) setTitle(parsed.title);
+        if (Array.isArray(parsed.lines) && parsed.lines.length) {
+          setLines(parsed.lines);
+          setActiveId(parsed.lines[0].id);
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
       }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
     }
+    setIsStorageHydrated(true);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ title, lines }));
-  }, [title, lines]);
+    if (!isStorageHydrated) return;
 
-  useEffect(() => {
-    inputRefs.current[activeId]?.focus();
-  }, [activeId, lines.length]);
+    const payload = JSON.stringify({ title, lines });
+    const existing = localStorage.getItem(STORAGE_KEY);
+    if (existing && existing !== payload) {
+      localStorage.setItem(STORAGE_BACKUP_KEY, existing);
+    }
+    localStorage.setItem(STORAGE_KEY, payload);
+  }, [title, lines, isStorageHydrated]);
+
+  function applyStoredScript(raw, label) {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.lines) || !parsed.lines.length) {
+      setRestoreStatus(`No lines found in ${label}.`);
+      return false;
+    }
+
+    setTitle(parsed.title ?? "Untitled Screenplay");
+    setLines(parsed.lines);
+    setActiveId(parsed.lines[0].id);
+    setRestoreStatus(`Restored script from ${label}.`);
+    return true;
+  }
+
+  function restoreBackupScript() {
+    const backup = localStorage.getItem(STORAGE_BACKUP_KEY);
+    if (!backup) {
+      setRestoreStatus("No backup found in this browser.");
+      return;
+    }
+
+    try {
+      applyStoredScript(backup, "backup");
+    } catch {
+      setRestoreStatus("Backup data is corrupted.");
+    }
+  }
 
   const activeLine = useMemo(
     () => lines.find((line) => line.id === activeId) ?? lines[0],
     [activeId, lines],
   );
   const pages = useMemo(() => paginateLines(lines), [lines]);
+  const characterNames = useMemo(() => {
+    const names = new Set();
+    for (const line of lines) {
+      if (line.type !== "character") continue;
+      const name = line.text.trim();
+      if (name) names.add(name.toUpperCase());
+    }
+    return [...names].sort();
+  }, [lines]);
+
+  useEffect(() => {
+    const targetId = editorSelectionRef.current?.id ?? composingLineIdRef.current ?? activeId;
+    const element = inputRefs.current[targetId];
+    if (!element) return;
+
+    requestAnimationFrame(() => {
+      restoreEditorFocus(targetId, element);
+    });
+  }, [lines, pages, activeId]);
 
   function updateLine(id, patch) {
     setLines((current) =>
@@ -262,6 +437,8 @@ function App() {
       const newLine = { id: crypto.randomUUID(), type, text: "" };
       const next = [...current];
       next.splice(index + 1, 0, newLine);
+      composingLineIdRef.current = newLine.id;
+      editorSelectionRef.current = { id: newLine.id, start: 0, end: 0 };
       setActiveId(newLine.id);
       return next;
     });
@@ -278,16 +455,102 @@ function App() {
   }
 
   function cycleType(line) {
-    const nextType = TYPE_BY_ID[line.type].next;
+    const index = TYPES.findIndex((type) => type.id === line.type);
+    const nextType = TYPES[(index + 1) % TYPES.length].id;
+    composingLineIdRef.current = line.id;
+    editorSelectionRef.current = {
+      id: line.id,
+      start: line.text.length,
+      end: line.text.length,
+    };
     updateLine(line.id, { type: nextType });
+  }
+
+  function completeCharacterName(line) {
+    const prefix = line.text.trim().toUpperCase();
+    if (!prefix) return null;
+    const matches = characterNames.filter((name) => name.startsWith(prefix) && name !== prefix);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  function handleParentheticalChange(event, line) {
+    const rawValue = event.target.value;
+    const cursor = event.target.selectionStart;
+    const inner = parseParentheticalInput(rawValue);
+    const wrapped = `(${inner})`;
+    let nextCursor = cursor;
+
+    if (nextCursor < 1) nextCursor = 1;
+    if (nextCursor > wrapped.length - 1) nextCursor = Math.max(1, wrapped.length - 1);
+
+    composingLineIdRef.current = line.id;
+    editorSelectionRef.current = { id: line.id, start: nextCursor, end: nextCursor };
+    updateLine(line.id, { text: inner });
+  }
+
+  function handleParentheticalKeyDown(event, line) {
+    const element = event.target;
+    const pos = element.selectionStart;
+    const end = element.selectionEnd;
+    const length = element.value.length;
+
+    if (pos === end) {
+      if (event.key === "Backspace" && pos <= 1) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Delete" && pos >= length - 1) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "ArrowLeft" && pos <= 1) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "ArrowRight" && pos >= length - 1) {
+        event.preventDefault();
+        return;
+      }
+    }
+
+    handleKeyDown(event, line);
+  }
+
+  function startNewScript() {
+    const existing = localStorage.getItem(STORAGE_KEY);
+    if (existing) {
+      localStorage.setItem(STORAGE_BACKUP_KEY, existing);
+    }
+    localStorage.removeItem(STORAGE_KEY);
+    const blankLines = createBlankLines();
+    setTitle("Untitled Screenplay");
+    setLines(blankLines);
+    setActiveId(blankLines[0].id);
+    setImportText("");
+    setImportStatus("");
+    setCopyStatus("");
+    setShowNewScriptModal(false);
   }
 
   function handleKeyDown(event, line) {
     if (event.key === "Tab") {
       event.preventDefault();
+      if (line.type === "character") {
+        const completion = completeCharacterName(line);
+        if (completion) {
+          composingLineIdRef.current = line.id;
+          editorSelectionRef.current = {
+            id: line.id,
+            start: completion.length,
+            end: completion.length,
+          };
+          updateLine(line.id, { text: completion });
+          return;
+        }
+      }
       cycleType(line);
     }
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && line.type !== "parenthetical") {
       event.preventDefault();
       addLine(line.id);
     }
@@ -301,6 +564,17 @@ function App() {
     document.title = `${title || "screenplay"}.pdf`;
     window.print();
     document.title = "Script Editor";
+  }
+
+  async function copyScriptToClipboard() {
+    const text = serializeScript(title, lines);
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus("Copied script to clipboard.");
+    } catch {
+      setCopyStatus("Could not copy to clipboard.");
+    }
   }
 
   function applyImportedText(rawText, label = "text") {
@@ -379,6 +653,17 @@ function App() {
           Download PDF
         </button>
 
+        <button className="secondary-button" onClick={copyScriptToClipboard}>
+          <Copy size={16} aria-hidden="true" />
+          Copy Script
+        </button>
+        {copyStatus && <div className="import-status">{copyStatus}</div>}
+
+        <button className="secondary-button" onClick={restoreBackupScript}>
+          Restore Backup
+        </button>
+        {restoreStatus && <div className="import-status">{restoreStatus}</div>}
+
         <div className="import-panel">
           <div className="panel-title">
             <ClipboardPaste size={17} aria-hidden="true" />
@@ -446,6 +731,54 @@ function App() {
       </aside>
 
       <section className="desk">
+        <button
+          type="button"
+          className="new-script-button"
+          onClick={() => setShowNewScriptModal(true)}
+          aria-label="New script"
+          title="New script"
+        >
+          <Plus size={20} aria-hidden="true" />
+        </button>
+
+        {showNewScriptModal && (
+          <div className="modal-root" role="presentation">
+            <button
+              type="button"
+              className="modal-backdrop"
+              aria-label="Close dialog"
+              onClick={() => setShowNewScriptModal(false)}
+            />
+            <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="new-script-title">
+              <h2 id="new-script-title" className="modal-title">
+                Start a new script?
+              </h2>
+              <p className="modal-copy">
+                Creating a new script will delete the current script. Please make sure to export it first
+                if you want to keep it.
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="modal-button modal-button-danger" onClick={startNewScript}>
+                  Delete and Start New Script
+                </button>
+                <button
+                  type="button"
+                  className="modal-button modal-button-cancel"
+                  onClick={() => setShowNewScriptModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <datalist id="character-suggestions">
+          {characterNames.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+
         <div className="page-stack" aria-label="Screenplay pages">
           {pages.map((pageLines, pageIndex) => (
             <div className="page" key={`page-${pageIndex}`} aria-label={`Screenplay page ${pageIndex + 1}`}>
@@ -465,39 +798,46 @@ function App() {
                   <div
                     className={`script-line ${line.type} ${line.id === activeId ? "is-active" : ""}`}
                     key={line.id}
-                    onFocus={() => setActiveId(line.id)}
                   >
-                    <textarea
-                      ref={(element) => {
-                        inputRefs.current[line.id] = element;
-                        if (element) {
-                          element.style.height = "0px";
-                          element.style.height = `${element.scrollHeight}px`;
-                        }
-                      }}
-                      value={displayText(line)}
-                      placeholder={TYPE_BY_ID[line.type].placeholder}
-                      onChange={(event) => updateLine(line.id, { text: event.target.value })}
-                      onKeyDown={(event) => handleKeyDown(event, line)}
-                      rows={1}
-                      aria-label={TYPE_BY_ID[line.type].label}
-                    />
-                    <button
-                      className="line-action add"
-                      onClick={() => addLine(line.id)}
-                      title="Add line"
-                      aria-label="Add line"
-                    >
-                      <Plus size={14} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="line-action remove"
-                      onClick={() => removeLine(line.id)}
-                      title="Delete line"
-                      aria-label="Delete line"
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </button>
+                    {line.type === "parenthetical" ? (
+                      <textarea
+                        ref={(element) => assignInputRef(line.id, element, true)}
+                        value={parentheticalEditableText(line)}
+                        onFocus={() => handleLineFocus(line.id)}
+                        onBlur={(event) => handleLineBlur(event, line.id)}
+                        onChange={(event) => handleParentheticalChange(event, line)}
+                        onKeyDown={(event) => handleParentheticalKeyDown(event, line)}
+                        rows={1}
+                        aria-label={TYPE_BY_ID[line.type].label}
+                      />
+                    ) : line.type === "character" ? (
+                      <input
+                        ref={(element) => assignInputRef(line.id, element)}
+                        className="line-input"
+                        type="text"
+                        list="character-suggestions"
+                        value={editableText(line)}
+                        placeholder={TYPE_BY_ID[line.type].placeholder}
+                        onFocus={() => handleLineFocus(line.id)}
+                        onBlur={(event) => handleLineBlur(event, line.id)}
+                        onChange={(event) => handleLineChange(event, line)}
+                        onKeyDown={(event) => handleKeyDown(event, line)}
+                        aria-label={TYPE_BY_ID[line.type].label}
+                        autoComplete="off"
+                      />
+                    ) : (
+                      <textarea
+                        ref={(element) => assignInputRef(line.id, element, true)}
+                        value={editableText(line)}
+                        placeholder={TYPE_BY_ID[line.type].placeholder}
+                        onFocus={() => handleLineFocus(line.id)}
+                        onBlur={(event) => handleLineBlur(event, line.id)}
+                        onChange={(event) => handleLineChange(event, line)}
+                        onKeyDown={(event) => handleKeyDown(event, line)}
+                        rows={1}
+                        aria-label={TYPE_BY_ID[line.type].label}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
