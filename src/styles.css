@@ -433,8 +433,57 @@ textarea {
   line-height: inherit;
 }
 
+.line-input-wrapper {
+  position: relative;
+}
+
 .script-line .line-input {
   overflow: visible;
+  position: relative;
+  background: transparent;
+  z-index: 1;
+}
+
+.inline-completion {
+  position: absolute;
+  pointer-events: none;
+  inset: 0;
+  display: block;
+  color: transparent;
+  white-space: pre;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: center;
+  z-index: 0;
+}
+
+.inline-completion-prefix {
+  visibility: visible;
+  display: inline-block;
+  white-space: pre;
+  color: #111;
+}
+
+.inline-completion-suffix {
+  color: rgba(17, 17, 17, 0.35);
+  display: inline-block;
+  white-space: pre;
+  margin-left: 0;
+  position: absolute;
+}
+
+.inline-measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+  left: -9999px;
+}
+
+.character .line-input,
+.character .inline-completion {
+  text-transform: uppercase;
 }
 
 .script-line textarea::placeholder,

@@ -112,33 +112,48 @@ function paginateLines(linesToPaginate) {
   let capacity = FIRST_PAGE_CAPACITY;
 
   function startNewPage() {
-    pages.push(currentPage);
+    if (currentPage.length > 0) {
+      pages.push(currentPage);
+    }
     currentPage = [];
     usedUnits = 0;
     capacity = PAGE_CAPACITY;
   }
 
-  for (const line of linesToPaginate) {
-    const lineUnits = estimateLineUnits(line);
+  for (let index = 0; index < linesToPaginate.length; index += 1) {
+    const line = linesToPaginate[index];
 
-    if (
-      line.type === "dialogue" &&
-      currentPage.length > 0 &&
-      currentPage.at(-1).type === "character" &&
-      usedUnits + lineUnits > capacity
-    ) {
-      const characterLine = currentPage.pop();
-      const characterUnits = estimateLineUnits(characterLine);
-      usedUnits -= characterUnits;
+    if (line.type === "character") {
+      const block = [line];
+      let nextIndex = index + 1;
+      while (
+        nextIndex < linesToPaginate.length &&
+        (linesToPaginate[nextIndex].type === "parenthetical" ||
+          linesToPaginate[nextIndex].type === "dialogue")
+      ) {
+        block.push(linesToPaginate[nextIndex]);
+        nextIndex += 1;
+      }
 
-      if (currentPage.length > 0 && usedUnits + characterUnits + lineUnits > capacity) {
+      const blockUnits = block.reduce((sum, blockLine) => sum + estimateLineUnits(blockLine), 0);
+      if (currentPage.length > 0 && usedUnits + blockUnits > capacity) {
         startNewPage();
       }
 
-      currentPage.push(characterLine);
-      usedUnits += characterUnits;
+      for (const blockLine of block) {
+        const blockLineUnits = estimateLineUnits(blockLine);
+        if (currentPage.length > 0 && usedUnits + blockLineUnits > capacity) {
+          startNewPage();
+        }
+        currentPage.push(blockLine);
+        usedUnits += blockLineUnits;
+      }
+
+      index = nextIndex - 1;
+      continue;
     }
 
+    const lineUnits = estimateLineUnits(line);
     if (currentPage.length > 0 && usedUnits + lineUnits > capacity) {
       startNewPage();
     }
@@ -147,7 +162,10 @@ function paginateLines(linesToPaginate) {
     usedUnits += lineUnits;
   }
 
-  pages.push(currentPage);
+  if (currentPage.length > 0) {
+    pages.push(currentPage);
+  }
+
   return pages;
 }
 
@@ -285,7 +303,7 @@ function App() {
       editorSelectionRef.current = null;
     }
 
-    element.scrollIntoView({ block: "nearest", behavior: "auto" });
+    element.scrollIntoView({ block: "center", behavior: "auto" });
   }
 
   function assignInputRef(lineId, element, resize = false) {
@@ -408,6 +426,45 @@ function App() {
     }
     return [...names].sort();
   }, [lines]);
+  const activeCharacterCompletion = useMemo(() => {
+    if (activeLine.type !== "character") return null;
+    const prefix = activeLine.text.trim().toUpperCase();
+    if (!prefix) return null;
+    const matches = characterNames.filter((name) => name.startsWith(prefix) && name !== prefix);
+    if (matches.length !== 1) return null;
+    return {
+      full: matches[0],
+      suffix: matches[0].slice(prefix.length),
+    };
+  }, [activeLine, characterNames]);
+
+  const wrapperRefs = useRef({});
+  const measureFullRef = useRef(null);
+  const measurePrefixRef = useRef(null);
+  const [suffixLeft, setSuffixLeft] = useState(0);
+
+  useEffect(() => {
+    if (!activeCharacterCompletion || activeLine.type !== "character") {
+      setSuffixLeft(0);
+      return;
+    }
+    const wrapper = wrapperRefs.current[activeLine.id];
+    const fullEl = measureFullRef.current;
+    const prefixEl = measurePrefixRef.current;
+    if (!wrapper || !fullEl || !prefixEl) return;
+
+    // Update measurement elements
+    fullEl.textContent = (editableText(activeLine) || "") + activeCharacterCompletion.suffix;
+    prefixEl.textContent = editableText(activeLine) || "";
+
+    requestAnimationFrame(() => {
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const fullWidth = fullEl.getBoundingClientRect().width;
+      const prefixWidth = prefixEl.getBoundingClientRect().width;
+      const left = Math.round(wrapperRect.width / 2 - fullWidth / 2 + prefixWidth);
+      setSuffixLeft(left);
+    });
+  }, [activeCharacterCompletion, activeLine, editableText, activeId]);
 
   useEffect(() => {
     const targetId = editorSelectionRef.current?.id ?? composingLineIdRef.current ?? activeId;
@@ -509,6 +566,11 @@ function App() {
       }
       if (event.key === "ArrowRight" && pos >= length - 1) {
         event.preventDefault();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addLine(line.id);
         return;
       }
     }
@@ -773,12 +835,6 @@ function App() {
           </div>
         )}
 
-        <datalist id="character-suggestions">
-          {characterNames.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
-
         <div className="page-stack" aria-label="Screenplay pages">
           {pages.map((pageLines, pageIndex) => (
             <div className="page" key={`page-${pageIndex}`} aria-label={`Screenplay page ${pageIndex + 1}`}>
@@ -811,20 +867,40 @@ function App() {
                         aria-label={TYPE_BY_ID[line.type].label}
                       />
                     ) : line.type === "character" ? (
-                      <input
-                        ref={(element) => assignInputRef(line.id, element)}
-                        className="line-input"
-                        type="text"
-                        list="character-suggestions"
-                        value={editableText(line)}
-                        placeholder={TYPE_BY_ID[line.type].placeholder}
-                        onFocus={() => handleLineFocus(line.id)}
-                        onBlur={(event) => handleLineBlur(event, line.id)}
-                        onChange={(event) => handleLineChange(event, line)}
-                        onKeyDown={(event) => handleKeyDown(event, line)}
-                        aria-label={TYPE_BY_ID[line.type].label}
-                        autoComplete="off"
-                      />
+                      <div
+                        className="line-input-wrapper"
+                        ref={(el) => {
+                          if (el) wrapperRefs.current[line.id] = el;
+                          else delete wrapperRefs.current[line.id];
+                        }}
+                      >
+                        <input
+                          ref={(element) => assignInputRef(line.id, element)}
+                          className="line-input"
+                          type="text"
+                          value={editableText(line)}
+                          placeholder={TYPE_BY_ID[line.type].placeholder}
+                          onFocus={() => handleLineFocus(line.id)}
+                          onBlur={(event) => handleLineBlur(event, line.id)}
+                          onChange={(event) => handleLineChange(event, line)}
+                          onKeyDown={(event) => handleKeyDown(event, line)}
+                          aria-label={TYPE_BY_ID[line.type].label}
+                          autoComplete="off"
+                        />
+                        {line.id === activeId && activeCharacterCompletion ? (
+                          <div className="inline-completion" aria-hidden="true">
+                            <span className="inline-completion-prefix">{editableText(line)}</span>
+                            <span
+                              className="inline-completion-suffix"
+                              style={{ position: "absolute", left: `${suffixLeft}px`, top: "50%", transform: "translateY(-50%)" }}
+                            >
+                              {activeCharacterCompletion.suffix}
+                            </span>
+                            <span ref={measureFullRef} className="inline-measure" aria-hidden="true" />
+                            <span ref={measurePrefixRef} className="inline-measure" aria-hidden="true" />
+                          </div>
+                        ) : null}
+                      </div>
                     ) : (
                       <textarea
                         ref={(element) => assignInputRef(line.id, element, true)}
